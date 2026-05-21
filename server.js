@@ -729,10 +729,10 @@ const io = initializeChatSocket(server, corsOptions);
 initializeSmartLockBellSocket(io);
 setDeviceControllerIo(io);
 
-/*server.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 MarketHub Backend running on http://localhost:${PORT}`);
   console.log(`📊 API Health Check: http://localhost:${PORT}/health`);
   console.log('✅ All routes loaded successfully');
-});*/
+});
 
 export default app;
