@@ -5,7 +5,7 @@ import Hotel from "../models/Hotel.js";
 import User from "../models/User.js";
 import mongoose from "mongoose";
 import { ensureCheckoutCleaningTask } from "../services/roomTaskService.js";
-import { sendStayReviewReminderEmail } from "../services/emailService.js";
+import { sendStayReviewReminderEmail, sendGuestWelcomeEmail } from "../services/emailService.js";
 import { revokeSmartLockAccessForBooking } from "./smartLockController.js";
 
 const sendCheckoutReviewReminder = async (booking) => {
@@ -123,6 +123,9 @@ const syncExpiredBookings = async (baseFilter = {}) => {
  */
 const createHotelBookingChat = async (booking, hotelData) => {
   try {
+    const hotelName = hotelData?.name || 'our hotel';
+    const welcomeMessage = `Welcome to ${hotelName}! Thank you for booking with us. Use your mobile phone to access hotel services, order food and drinks, and track your delivery in real time all from the comfort of your room. Enjoy your stay!`;
+
     const vendorChat = new VendorChat({
       customerId: booking.guest,
       bookingId: booking._id.toString(),
@@ -137,7 +140,7 @@ const createHotelBookingChat = async (booking, hotelData) => {
           _id: new mongoose.Types.ObjectId(),
           sender: 'vendor',
           senderName: hotelData?.name || 'Hotel',
-          message: `Welcome! Your booking from ${booking.checkInDate} to ${booking.checkOutDate} has been confirmed. Feel free to contact us for any questions!`,
+          message: welcomeMessage,
           timestamp: new Date(),
           read: false
         }
@@ -267,6 +270,14 @@ const createBooking = async (req, res) => {
     // Create vendor chat for booking
     const hotelData = booking.hotel;
     await createHotelBookingChat(booking, hotelData);
+
+    // Send welcome email
+    if (booking.guest?.email) {
+      await sendGuestWelcomeEmail(booking.guest.email, {
+        guestName: booking.guest.name || 'Guest',
+        hotelName: hotelData?.name || 'Hotel'
+      });
+    }
 
     // Update room status
     await Room.findByIdAndUpdate(room, { status: "reserved" });
@@ -468,6 +479,64 @@ const addRoomServiceOrder = async (req, res) => {
   }
 };
 
+/**
+ * Update a room service order
+ * Only allowed if status is 'pending' or 'confirmed'
+ */
+const updateRoomServiceOrder = async (req, res) => {
+  try {
+    const { bookingId, orderId } = req.params;
+    const { items, totalPrice, notes } = req.body;
+
+    console.log('🔄 ========== UPDATE ROOM SERVICE ORDER ==========');
+    console.log('📌 Booking ID:', bookingId);
+    console.log('🔔 Order ID:', orderId);
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ status: "error", message: "Booking not found" });
+    }
+
+    const orderIndex = booking.roomServiceOrders.findIndex(o => o._id.toString() === orderId);
+    if (orderIndex === -1) {
+      return res.status(404).json({ status: "error", message: "Order not found" });
+    }
+
+    const order = booking.roomServiceOrders[orderIndex];
+
+    // Only allow editing if pending or confirmed
+    if (!['pending', 'confirmed'].includes(order.status)) {
+      return res.status(400).json({ 
+        status: "error", 
+        message: `Order cannot be edited in its current status: ${order.status}` 
+      });
+    }
+
+    // Update fields if provided
+    if (items) order.items = items;
+    if (totalPrice !== undefined) order.totalPrice = totalPrice;
+    if (notes !== undefined) order.notes = notes;
+
+    booking.roomServiceOrders[orderIndex] = order;
+    await booking.save();
+
+    console.log('✅ Room service order updated successfully!');
+
+    return res.status(200).json({
+      status: "success",
+      message: "Order updated successfully",
+      data: { booking }
+    });
+  } catch (err) {
+    console.error('❌ Error updating room service order:', err);
+    return res.status(500).json({
+      status: "error",
+      message: "Failed to update room service order",
+      error: err.message
+    });
+  }
+};
+
 export {
   getAllBookings,
   getBookingById,
@@ -477,5 +546,6 @@ export {
   updateBookingStatus,
   updatePaymentStatus,
   addRoomServiceOrder,
+  updateRoomServiceOrder,
   syncExpiredBookings
 };

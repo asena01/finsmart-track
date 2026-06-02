@@ -7,7 +7,8 @@ import {
   deleteBooking,
   updateBookingStatus,
   updatePaymentStatus,
-  addRoomServiceOrder
+  addRoomServiceOrder,
+  updateRoomServiceOrder
 } from '../controllers/bookingsController.js';
 import {
   cleanupIdentityVerification,
@@ -56,5 +57,8 @@ router.delete('/:id', deleteBooking);
 
 // POST add room service order
 router.post('/:bookingId/room-service-orders', addRoomServiceOrder);
+
+// PUT update room service order
+router.put('/:bookingId/room-service-orders/:orderId', updateRoomServiceOrder);
 
 export default router;

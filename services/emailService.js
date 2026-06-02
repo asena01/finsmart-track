@@ -776,12 +776,72 @@ export const sendStaffWelcomeEmail = async (email, payload) => {
   }
 };
 
+const generateGuestWelcomeEmailTemplate = ({
+  guestName = 'Guest',
+  hotelName = 'Hotel',
+}) => {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Welcome to ${hotelName}</title>
+      </head>
+      <body style="margin: 0; padding: 24px; background: #f8fafc; font-family: Arial, sans-serif; color: #0f172a;">
+        <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden;">
+          <div style="padding: 28px 32px; background: linear-gradient(135deg, #0f172a, #2563eb); color: #ffffff;">
+            <div style="font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.82;">Welcome</div>
+            <h1 style="margin: 10px 0 6px; font-size: 28px;">Welcome to ${hotelName}!</h1>
+          </div>
+
+          <div style="padding: 28px 32px;">
+            <p style="margin-top: 0;">Hi ${guestName},</p>
+            <p>Thank you for booking with us. Use your mobile phone to access hotel services, order food and drinks, and track your delivery in real time all from the comfort of your room.</p>
+            <p>Enjoy your stay!</p>
+
+            <div style="margin-top: 24px;">
+              <a
+                href="https://www.smarttrackbookings.live/customer-dashboard"
+                style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 10px; font-weight: 700;"
+              >
+                Access Guest Services
+              </a>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+};
+
+export const sendGuestWelcomeEmail = async (email, payload) => {
+  try {
+    const transporter = createTransporter();
+    const html = generateGuestWelcomeEmailTemplate(payload);
+
+    const result = await transporter.sendMail({
+      from: process.env.EMAIL_USER || 'hotelmanagement546@gmail.com',
+      to: email,
+      subject: `Welcome to ${payload.hotelName || 'our hotel'}!`,
+      html,
+    });
+
+    console.log('✅ Guest welcome email sent:', result.messageId);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('❌ Failed to send guest welcome email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 export default {
   sendSmartLockAccessEmail,
   sendEmailBooking,
   sendIncomeReportEmail,
   sendStayReviewReminderEmail,
   sendStaffWelcomeEmail,
+  sendGuestWelcomeEmail,
   createTransporter,
   generateSmartLockEmailTemplate
 };

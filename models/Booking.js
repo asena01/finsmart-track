@@ -204,7 +204,7 @@ const BookingSchema = new Schema({
     notes: String,
     status: {
       type: String,
-      enum: ['pending', 'preparing', 'ready', 'delivered', 'cancelled'],
+      enum: ['pending', 'confirmed', 'preparing', 'ready', 'en-route', 'delivered', 'cancelled'],
       default: 'pending'
     },
     estimatedDurationMinutes: {
