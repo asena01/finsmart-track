@@ -155,6 +155,28 @@ const createHotelBookingChat = async (booking, hotelData) => {
   }
 };
 
+const runPostBookingTasks = (booking, hotelData, roomId) => {
+  const tasks = [
+    createHotelBookingChat(booking, hotelData),
+    Room.findByIdAndUpdate(roomId, { status: "reserved" })
+  ];
+
+  if (booking.guest?.email) {
+    tasks.push(sendGuestWelcomeEmail(booking.guest.email, {
+      guestName: booking.guest.name || 'Guest',
+      hotelName: hotelData?.name || 'Hotel'
+    }));
+  }
+
+  Promise.allSettled(tasks).then((results) => {
+    results.forEach((result) => {
+      if (result.status === 'rejected') {
+        console.warn('⚠️ Post-booking task failed:', result.reason?.message || result.reason);
+      }
+    });
+  });
+};
+
 // Get all bookings for a hotel
 const getAllBookings = async (req, res) => {
   try {
@@ -277,20 +299,8 @@ const createBooking = async (req, res) => {
     await booking.populate("guest", "name email phone");
     await booking.populate("room", "roomNumber roomType");
 
-    // Create vendor chat for booking
     const hotelData = booking.hotel;
-    await createHotelBookingChat(booking, hotelData);
-
-    // Send welcome email
-    if (booking.guest?.email) {
-      await sendGuestWelcomeEmail(booking.guest.email, {
-        guestName: booking.guest.name || 'Guest',
-        hotelName: hotelData?.name || 'Hotel'
-      });
-    }
-
-    // Update room status
-    await Room.findByIdAndUpdate(room, { status: "reserved" });
+    runPostBookingTasks(booking, hotelData, roomId_);
 
     return res.status(201).json({
       status: "success",
