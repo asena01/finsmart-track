@@ -2,20 +2,38 @@ import FoodOrder from "../models/FoodOrder.js";
 import Booking from "../models/Booking.js";
 import { emitOrderUpdate } from "../services/chatSocketService.js";
 
-const FOOD_ORDER_STATUSES = ["pending", "preparing", "ready", "dispatched", "delivering", "delivered", "cancelled"];
+const FOOD_ORDER_STATUSES = ["pending", "processing", "shipped", "dispatched", "delivered", "cancelled"];
+const FOOD_ORDER_STATUS_ALIASES = {
+  confirmed: "processing",
+  preparing: "processing",
+  ready: "shipped",
+  "en-route": "dispatched",
+  delivering: "dispatched",
+  on_the_way: "dispatched",
+  "in-transit": "dispatched"
+};
 
 const normalizeFoodOrderStatus = (status) => {
   const normalized = String(status || "").trim().toLowerCase();
-  if (normalized === "confirmed") return "preparing";
-  if (normalized === "en-route" || normalized === "on_the_way" || normalized === "in-transit") return "delivering";
-  return FOOD_ORDER_STATUSES.includes(normalized) ? normalized : "pending";
+  if (!normalized) return "";
+  if (FOOD_ORDER_STATUS_ALIASES[normalized]) return FOOD_ORDER_STATUS_ALIASES[normalized];
+  return FOOD_ORDER_STATUSES.includes(normalized) ? normalized : "";
 };
 
 const getStatusQueryValues = (status) => {
   const normalized = normalizeFoodOrderStatus(status);
-  if (normalized === "preparing") return ["preparing", "confirmed"];
-  if (normalized === "delivering") return ["delivering", "en-route", "on_the_way", "in-transit"];
+  if (normalized === "processing") return ["processing", "preparing", "confirmed"];
+  if (normalized === "shipped") return ["shipped", "ready"];
+  if (normalized === "dispatched") return ["dispatched", "delivering", "en-route", "on_the_way", "in-transit"];
   return [normalized];
+};
+
+const getStatusTimestampUpdates = (status, now) => {
+  if (status === "processing") return { prepStartTime: now };
+  if (status === "shipped") return { prepEndTime: now, readyAt: now };
+  if (status === "dispatched") return { dispatchedAt: now, deliveryStartTime: now };
+  if (status === "delivered") return { deliveryEndTime: now, deliveredAt: now };
+  return {};
 };
 
 const deriveCategoryFromItems = (items = []) => {
@@ -144,7 +162,7 @@ const getFoodOrderById = async (req, res) => {
 const createFoodOrder = async (req, res) => {
   try {
     const { hotelId } = req.params;
-    const { roomNumber, guestName, items, totalPrice, category, ...rest } = req.body;
+    const { roomNumber, guestName, items, totalPrice, category, status, ...rest } = req.body;
 
     if (!roomNumber || !guestName || !items || !totalPrice) {
       return res.status(400).json({ status: "failed", message: "Missing required fields" });
@@ -159,6 +177,14 @@ const createFoodOrder = async (req, res) => {
     const orderId = "FO-" + Date.now().toString().slice(-10);
     const prepTime = rest.preparationTime || 20;
     const estimatedDeliveryTime = new Date(Date.now() + prepTime * 60000);
+    const normalizedStatus = status ? normalizeFoodOrderStatus(status) : "";
+
+    if (status && !normalizedStatus) {
+      return res.status(400).json({
+        status: "failed",
+        message: `Invalid status. Must be one of: ${FOOD_ORDER_STATUSES.join(", ")}`
+      });
+    }
 
     const order = new FoodOrder({
       hotel: hotelId,
@@ -170,6 +196,7 @@ const createFoodOrder = async (req, res) => {
       category: orderCategory || "mixed",
       preparationTime: prepTime,
       estimatedDeliveryTime,
+      status: normalizedStatus || "pending",
       ...rest
     });
 
@@ -190,7 +217,18 @@ const createFoodOrder = async (req, res) => {
 const updateFoodOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    const updates = { ...req.body };
+
+    if (updates.status) {
+      const normalizedStatus = normalizeFoodOrderStatus(updates.status);
+      if (!normalizedStatus) {
+        return res.status(400).json({
+          status: "failed",
+          message: `Invalid status. Must be one of: ${FOOD_ORDER_STATUSES.join(", ")}`
+        });
+      }
+      updates.status = normalizedStatus;
+    }
 
     const order = await FoodOrder.findByIdAndUpdate(id, updates, { new: true })
       .populate("guest", "name email phone")
@@ -213,28 +251,17 @@ const updateFoodOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
+    const normalizedStatus = normalizeFoodOrderStatus(status);
 
-    if (!FOOD_ORDER_STATUSES.includes(status)) {
-      return res.status(400).json({ status: "failed", message: "Invalid status" });
+    if (!normalizedStatus) {
+      return res.status(400).json({
+        status: "failed",
+        message: `Invalid status. Must be one of: ${FOOD_ORDER_STATUSES.join(", ")}`
+      });
     }
 
-    const updates = { status };
     const now = new Date();
-
-    if (status === "preparing") updates.prepStartTime = now;
-    else if (status === "ready") {
-      updates.prepEndTime = now;
-      updates.readyAt = now;
-    }
-    else if (status === "dispatched") {
-      updates.dispatchedAt = now;
-      updates.deliveryStartTime = now;
-    }
-    else if (status === "delivering") updates.deliveryStartTime = now;
-    else if (status === "delivered") {
-      updates.deliveryEndTime = now;
-      updates.deliveredAt = now;
-    }
+    const updates = { status: normalizedStatus, ...getStatusTimestampUpdates(normalizedStatus, now) };
 
     const order = await FoodOrder.findByIdAndUpdate(id, updates, { new: true });
     if (order) {
@@ -258,25 +285,13 @@ const updateFoodOrderStatus = async (req, res) => {
       return res.status(404).json({ status: "failed", message: "Food order not found" });
     }
 
-    if (!FOOD_ORDER_STATUSES.includes(status)) {
-      return res.status(400).json({ status: "failed", message: "Invalid room service order status" });
-    }
+    const embeddedOrderUpdates = {
+      status: normalizedStatus,
+      ...getStatusTimestampUpdates(normalizedStatus, now)
+    };
 
-    const embeddedOrderUpdates = { status };
-    if (status === "ready") {
+    if (normalizedStatus === "shipped") {
       embeddedOrderUpdates.etaAt = now;
-      embeddedOrderUpdates.readyAt = now;
-    }
-    if (status === "dispatched") {
-      embeddedOrderUpdates.dispatchedAt = now;
-      embeddedOrderUpdates.deliveryStartTime = now;
-    }
-    if (status === "delivering") {
-      embeddedOrderUpdates.deliveryStartTime = now;
-    }
-    if (status === "delivered") {
-      embeddedOrderUpdates.deliveredAt = now;
-      embeddedOrderUpdates.deliveryEndTime = now;
     }
 
     const prefixedUpdates = Object.fromEntries(
