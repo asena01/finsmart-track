@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "Render entrypoint for the finsmart-track backend service.",
+  "main": "index.js",
   "engines": {
     "node": "20"
   },
   "scripts": {
     "postinstall": "npm --prefix finsmart-track install",
     "build": "npm --prefix finsmart-track install",
-    "start": "npm --prefix finsmart-track start",
+    "start": "node index.js",
     "dev": "npm --prefix finsmart-track run dev",
     "lint": "npm --prefix finsmart-track run lint"
   }
