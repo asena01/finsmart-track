@@ -1,4 +1,8 @@
 import { Server } from 'socket.io';
+import {
+  broadcastOrderSseUpdate,
+  buildOrderUpdatePayload
+} from './orderRealtimeService.js';
 
 let ioInstance = null;
 
@@ -65,33 +69,19 @@ export const emitChatUpdate = (chat, event = 'chat-updated', extra = {}) => {
 };
 
 export const emitOrderUpdate = (order, event = 'order-updated', extra = {}) => {
-  if (!ioInstance || !order) {
+  if (!order) {
     return;
   }
 
-  const payload = {
-    event,
-    orderId: order._id?.toString?.() || order._id,
-    status: order.status,
-    updatedAt: order.updatedAt || new Date(),
-    readyAt: order.readyAt,
-    dispatchedAt: order.dispatchedAt,
-    deliveredAt: order.deliveredAt,
-    estimatedDeliveryTime: order.estimatedDeliveryTime,
-    ...extra
-  };
+  broadcastOrderSseUpdate(order, event, extra);
 
-  const getId = (obj) => {
-    if (!obj) return null;
-    if (typeof obj === 'string') return obj;
-    if (typeof obj === 'object') {
-      return obj._id?.toString?.() || obj.id?.toString?.() || obj.toString?.();
-    }
-    return String(obj);
-  };
+  if (!ioInstance) {
+    return;
+  }
 
-  const customerId = getId(order.customerId || order.userId || order.guest);
-  const vendorId = getId(order.restaurantId || order.vendorId || order.hotel);
+  const payload = buildOrderUpdatePayload(order, event, extra);
+  const customerId = payload.customerId;
+  const vendorId = payload.vendorId;
 
   if (customerId) {
     ioInstance.to(`customer:${customerId}`).emit(event, payload);

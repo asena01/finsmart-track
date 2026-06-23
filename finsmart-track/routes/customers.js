@@ -6,6 +6,12 @@ import VendorChat from '../models/VendorChat.js';
 import Booking from '../models/Booking.js';
 import User from '../models/User.js';
 import { emitChatUpdate } from '../services/chatSocketService.js';
+import {
+  registerCustomerOrderStream,
+  registerVendorOrderStream,
+  unregisterCustomerOrderStream,
+  unregisterVendorOrderStream
+} from '../services/orderRealtimeService.js';
 
 const router = express.Router();
 const customerChatStreams = new Map();
@@ -423,6 +429,67 @@ router.delete('/:customerId', async (req, res) => {
       message: error.message,
     });
   }
+});
+
+// ==================== ORDER REAL-TIME ENDPOINTS ====================
+
+router.get('/orders/stream', (req, res) => {
+  const userId = (req.query.userId || req.headers['x-user-id'])?.toString?.();
+
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      message: 'User ID is required'
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  registerCustomerOrderStream(userId, res);
+  res.write(`event: connected\ndata: ${JSON.stringify({ ok: true, scope: 'customer', userId })}\n\n`);
+
+  const heartbeat = setInterval(() => {
+    res.write(`event: ping\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unregisterCustomerOrderStream(userId, res);
+    res.end();
+  });
+});
+
+router.get('/orders-by-vendor/:vendorId/stream', (req, res) => {
+  const { vendorId } = req.params;
+  const authVendorId = (req.query.vendorId || req.headers['x-vendor-id'])?.toString?.();
+
+  if (!authVendorId || authVendorId !== vendorId) {
+    return res.status(403).json({
+      success: false,
+      message: 'Unauthorized: You can only subscribe to your own orders'
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  registerVendorOrderStream(vendorId, res);
+  res.write(`event: connected\ndata: ${JSON.stringify({ ok: true, scope: 'vendor', vendorId })}\n\n`);
+
+  const heartbeat = setInterval(() => {
+    res.write(`event: ping\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unregisterVendorOrderStream(vendorId, res);
+    res.end();
+  });
 });
 
 // ==================== VENDOR CHAT ENDPOINTS ====================

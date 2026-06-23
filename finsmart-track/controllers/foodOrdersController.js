@@ -320,8 +320,11 @@ const updateFoodOrderStatus = async (req, res) => {
       hotel: booking.hotel,
       status: updatedEmbeddedOrder.status,
       readyAt: updatedEmbeddedOrder.readyAt,
+      etaAt: updatedEmbeddedOrder.etaAt,
       dispatchedAt: updatedEmbeddedOrder.dispatchedAt,
       deliveredAt: updatedEmbeddedOrder.deliveredAt,
+      estimatedDurationMinutes: updatedEmbeddedOrder.estimatedDurationMinutes,
+      orderedAt: updatedEmbeddedOrder.orderedAt,
       updatedAt: now
     });
 
